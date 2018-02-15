@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Qvill</title>
+
+    <script src="quill/quill.min.js"></script>
+    <script src="qvill.js"></script>
+
+    <link rel="stylesheet" href="quill/quill.snow.css"/>
+    <link rel="stylesheet" href="qvill.css"/>
+
+</head>
+<body>
+<div id="html-editor"></div>
+
+<script>
+	let maxRows = 6;
+	let maxCols = 6;
+	let tableOptions = [];
+	for(let r = 1; r <= maxRows; r++)
+	{
+		for(let c = 1; c <= maxCols; c++)
+		{
+			tableOptions.push('newtable_' + r + '_' + c);
+		}
+	}
+
+	var q = new Quill(
+		// Element
+		document.getElementById("html-editor"),
+
+		// Options
+		{
+			// Theme
+			theme: 'snow',
+
+			// Modules
+			modules:
+				{
+					// Toolbar
+					toolbar: {
+						container: [
+							[{header: [false]}],
+							["bold", "italic", "underline"], //, "image"
+							[{'list': 'bullet'}],
+							[{"align": []}],
+							["clean"],
+							[{'table': tableOptions}] // new table (cursor needs to be out of table)
+						],
+						handlers: {
+							table: function(value) {
+								if(value && value.includes('newtable_'))
+								{
+									let sizes = value.split('_');
+									let rows = Number.parseInt(sizes[1]);
+									let columns = Number.parseInt(sizes[2]);
+									let table = Parchment.create('table');
+									const range = this.quill.getSelection();
+									if(!range)
+										return;
+
+									const newLineIndex = getClosestNewLineIndex(this.quill, this.quill.getContents(), range.index + range.length);
+									let changeDelta = new Delta().retain(newLineIndex);
+									changeDelta = changeDelta.insert('\n');
+
+									for(let i = 0; i < rows; i++)
+									{
+										for(let j = 0; j < columns; j++)
+										{
+											changeDelta = changeDelta.insert('\n', {
+												td: true
+											});
+
+											if(j < columns - 1)
+												changeDelta = changeDelta.insert({tdbr: true});
+										}
+
+										changeDelta = changeDelta.insert({trbr: true});
+									}
+
+									this.quill.updateContents(changeDelta, Quill.sources.USER);
+									this.quill.setSelection(newLineIndex + 1);
+								} else
+								{
+									// TODO
+								}
+							},
+							'table-insert-rows': function() {
+								insertNewRow(this.quill);
+							},
+							'table-insert-columns': function() {
+								let td = find_td(this.quill, 'td');
+								if(td)
+								{
+									let table = td.parent.parent;
+									td.parent.parent.children.forEach(function(tr) {
+										let td = Parchment.create('td');
+										tr.appendChild(td);
+										tr.appendChild(Parchment.create('tdbr'))
+									});
+								}
+							}
+						}
+					},
+
+					// Improved Line Break
+					clipboard:
+						{
+							matchers: [
+								['BR', window.top.lineBreakMatcher]
+							]
+						}
+					,
+					keyboard: {
+						bindings: {
+							linebreak: {
+								key: 13,
+								shiftKey:
+									true,
+								handler:
+								window.top.lineBreakHandler
+							},
+							tableBackspace: {
+								key: 8,
+								// offset: 0,
+								handler: function(range, context) {
+									var formats = this.quill.getFormat(range.index - 1, 1);
+									if(formats.tdbr || formats.trbr)
+									{
+										// prevent deletion of table break
+										return false;
+									}
+									return true;
+								}
+							},
+							tableShiftTab: {
+								key: 9,
+								format: ["td", "tdbr", "trbr"],
+								shiftKey: true,
+								handler: function(range) {
+									var formats = this.quill.getFormat(range.index - 1, 1);
+									var previousTD = getPreviousTDIndex(this.quill, this.quill.getContents(0, range.index), range.index);
+									this.quill.setSelection(previousTD, "silent");
+								}
+							},
+							tab: {
+								key: 9,
+								handler: function(range, context) {
+									var formats = this.quill.getFormat(range.index - 1, 1);
+									var nextTD = getNextTDIndex(this.quill, this.quill.getContents(range.index), range.index);
+									if(formats.td || formats.tdbr || formats.trbr)
+									{
+										this.quill.setSelection(nextTD, 0);
+									}
+									else
+									{
+										if(!context.collapsed)
+										{
+											this.quill.scroll.deleteAt(range.index, range.length);
+										}
+										this.quill.insertText(range.index, '\t', "user");
+										this.quill.setSelection(range.index + 1, "silent");
+									}
+								}
+							},
+							tableEnter: {
+								key: 13,
+								handler: function(range, context) {
+									console.log(this.quill.getContents());
+									return true;
+								}
+							}
+						}
+					}
+				}
+		}
+	);
+</script>
+</body>
+</html>
